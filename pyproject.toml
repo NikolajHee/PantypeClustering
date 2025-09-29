@@ -1,0 +1,15 @@
+[project]
+name = "pantypeclustering"
+version = "0.1.0"
+description = "Special course examing the use of Pantypes and VAEs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+
+
