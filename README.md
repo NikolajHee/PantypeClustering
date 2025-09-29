@@ -1,1 +1,6 @@
 # PantypeClustering
+
+
+- UV
+- pre-commits
+- 
