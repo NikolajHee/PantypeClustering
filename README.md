@@ -1,6 +1,5 @@
 # PantypeClustering
 
+Special couse under supervision of Manja Grønborg, Line Clemmensen and Magnus Harder.
 
-- UV
-- pre-commits
-- 
+GOAL: Clustering within the PanVAE framework. 
