@@ -1,15 +1,74 @@
 [project]
-name = "pantypeclustering"
+name = "PantypeClustering"
 version = "0.1.0"
+authors = [
+  {name="Nikolaj Hertz"}
+]
 description = "Special course examing the use of Pantypes and VAEs"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "lightning>=2.5.5",
+    "loguru>=0.7.3",
+    "numpy>=2.3.3",
+    "pre-commit>=4.3.0",
+    "tensorboard>=2.20.0",
+    "torch>=2.8.0",
+    "torchvision>=0.23.0",
+]
 
+[project.scripts]
+main = "PantypeClustering.main:main"
 
 [build-system]
-requires = ["setuptools >= 77.0.3"]
+requires = ["setuptools >= 77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["src"]
 
+[tool.setuptools]
+package-dir = {"" = "src"}
 
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude=["typings/", "*.pyi"]
+
+[tool.ruff.lint]
+select = [
+  "ANN001",
+  "ANN201",
+  "ARG001",
+  "B",
+  "C4",
+  "C90",
+  "DTZ",
+  "E",
+  "F",
+  "I",
+  "N",
+  "PD",
+  "PLE",
+  "RUF100",
+  "SIM",
+  "W",
+]
+
+fixable = ["ALL"]
+unfixable = []
+
+[tool.pyright]
+extraPaths = []
+
+include = ["src"]
+exclude =[
+]
+
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportImportCycles = true
+reportPrivateUsage = true
+reportCallInDefaultInitializer = true
+reportImplicitStringConcatenation = true
+reportMissingTypeStubs = false
