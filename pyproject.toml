@@ -1,5 +1,5 @@
 [project]
-name = "PantypeClustering"
+name = "pantypeclustering"
 version = "0.1.0"
 authors = [
   {name="Nikolaj Hertz"}
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-main = "PantypeClustering.main:main"
+main = "pantypeclustering.main:main"
 
 [build-system]
 requires = ["setuptools >= 77.0.3", "wheel"]
