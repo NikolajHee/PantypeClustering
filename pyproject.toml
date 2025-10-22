@@ -25,6 +25,13 @@ main = "pantypeclustering.main:main"
 [tool.uv]
 package=true
 
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src/"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
