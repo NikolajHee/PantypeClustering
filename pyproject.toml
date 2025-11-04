@@ -8,6 +8,7 @@ description = "Special course examing the use of Pantypes and VAEs"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "ipykernel>=7.0.1",
     "lightning>=2.5.5",
     "loguru>=0.7.3",
     "matplotlib>=3.10.7",

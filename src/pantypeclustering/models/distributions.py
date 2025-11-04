@@ -20,9 +20,9 @@ class ReparameterizedDiagonalGaussian(Distribution):
         """`eps ~ N(0, I)`"""
         return torch.empty_like(self.mu).normal_()
 
-    def sample(
+    def sample(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
-    ) -> torch.Tensor:  # pyright: ignore[reportIncompatibleMethodOverride]
+    ) -> torch.Tensor:
         """sample `z ~ N(z | mu, sigma)` (without gradients)"""
         with torch.no_grad():
             return self.rsample()
@@ -31,10 +31,10 @@ class ReparameterizedDiagonalGaussian(Distribution):
         """sample `z ~ N(z | mu, sigma)` (with the reparameterization trick)"""
         return self.mu + self.sigma * self.sample_epsilon()  # <- your code
 
-    def log_prob(
+    def log_prob(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         z: torch.Tensor,
-    ) -> torch.Tensor:  # pyright: ignore[reportIncompatibleMethodOverride]
+    ) -> torch.Tensor:
         """return the log probability: log `p(z)`"""
 
         return torch.distributions.Normal(self.mu, self.sigma).log_prob(z)
