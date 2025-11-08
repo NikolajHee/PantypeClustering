@@ -305,8 +305,8 @@ class VariationalAutoencoder(lightning.LightningModule):
             ),
         )
 
-        self.logger.log_metrics(
-            {  # pyright: ignore[reportOptionalMemberAccess]
+        self.logger.log_metrics(  # pyright: ignore[reportOptionalMemberAccess]
+            {
                 "calinski_harabasz_score": calinski_harabasz_sc,
                 "db_score": db_sc,
                 "silhouette_score": silhouette_sc,
