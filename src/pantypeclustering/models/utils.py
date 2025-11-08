@@ -4,15 +4,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
 from numpy.typing import NDArray
-from sklearn.manifold import TSNE
 
 
-def tsne(z: NDArray[Any]) -> NDArray[Any]:
-    tsne = TSNE(n_components=2, random_state=42)
-    return tsne.fit_transform(z)
-
-
-def tsne_plot(tsne_results: NDArray[Any], labels: NDArray[Any]) -> Figure:
+def tsne_plot(
+    tsne_results: NDArray[Any],
+    labels: NDArray[Any],
+    means: NDArray[Any] | None = None,
+) -> Figure:
     fig = plt.figure(figsize=(10, 8))  # pyright: ignore[reportUnknownMemberType]
     scatter = plt.scatter(  # pyright: ignore[reportUnknownMemberType]
         tsne_results[:, 0],
@@ -21,6 +19,13 @@ def tsne_plot(tsne_results: NDArray[Any], labels: NDArray[Any]) -> Figure:
         cmap="tab10",
         alpha=0.7,
     )
+    if means is not None:
+        _ = plt.scatter(  # pyright: ignore[reportUnknownMemberType]
+            means[:, 0],
+            means[:, 1],
+            marker="x",
+        )
+
     plt.colorbar(scatter)  # pyright: ignore[reportUnknownMemberType]
     plt.title("t-SNE Visualization of Latent Space")  # pyright: ignore[reportUnknownMemberType]
     plt.xlabel("t-SNE 1")  # pyright: ignore[reportUnknownMemberType]
