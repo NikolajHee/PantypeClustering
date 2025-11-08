@@ -14,7 +14,8 @@ class ReparameterizedDiagonalGaussian(Distribution):
         f"`log_sigma` : {log_sigma.shape} must be of the same shape"
 
         self.mu = mu
-        self.sigma = log_sigma.exp()
+        # Add epsilon for numerical stability to prevent sigma from being too small
+        self.sigma = log_sigma.exp().clamp(min=1e-6)
 
     def sample_epsilon(self) -> torch.Tensor:
         """`eps ~ N(0, I)`"""
