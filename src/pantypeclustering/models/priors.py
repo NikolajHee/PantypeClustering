@@ -3,6 +3,7 @@ from abc import abstractmethod
 import lightning
 import torch
 import torch.nn.functional as f
+from models.distributions import ReparameterizedDiagonalGaussian
 from torch import Tensor, nn
 
 
@@ -79,3 +80,19 @@ class MixtureOfGaussian(BasePrior):
         log_prob = torch.logsumexp(log_p, dim=0, keepdim=False)
 
         return log_prob
+
+
+class UnivariateGaussian(BasePrior):
+    def __init__(self, latent_dim: int) -> None:
+        super().__init__()
+
+        self.dist = ReparameterizedDiagonalGaussian(
+            mu=torch.zeros(latent_dim).to("mps:0"),
+            log_sigma=torch.zeros(latent_dim).to("mps:0"),
+        )
+
+    def rsample(self, batch_size: int) -> Tensor:
+        return self.dist.rsample()
+
+    def log_prob(self, z: Tensor) -> Tensor:
+        return self.dist.log_prob(z)
