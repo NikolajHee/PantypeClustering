@@ -1,45 +1,26 @@
-from abc import abstractmethod
 from typing import Any, Mapping, Union
 
 import lightning
 import torch
+from loguru import logger
+from models.basemodel import BaseModel
 from models.distributions import ReparameterizedDiagonalGaussian
 from models.priors import BasePrior, MixtureOfGaussian
-from models.utils import fig_to_image, tsne, tsne_plot
+from models.utils import fig_to_image, tsne_plot
+from numpy.typing import NDArray
+from sklearn.manifold import TSNE
+from sklearn.metrics import (
+    calinski_harabasz_score,
+    davies_bouldin_score,
+    silhouette_score,  # pyright: ignore[reportUnknownVariableType]
+)
 from torch import Tensor, nn
-from torch.distributions import Bernoulli, Distribution
+from torch.distributions import Distribution
 
 
 def reduce(x: Tensor) -> Tensor:
     """for each datapoint: sum over all dimensions"""
     return x.view(x.size(0), -1).sum(dim=1)
-
-
-class BaseModel(lightning.LightningModule):
-    def __init__(
-        self,
-        encoder: nn.Module,
-        decoder: nn.Module,
-        prior: BasePrior,
-        input_shape: tuple[int, int, int],  # (C,W,H)
-        latent_features: int,
-        batch_size: int,
-    ) -> None:
-        super().__init__()
-        self.encoder = encoder
-        self.decoder = decoder
-        self.input_shape = input_shape
-        self.latent_features = latent_features
-        self.prior = prior
-
-    @abstractmethod
-    def posterior(self, x: Tensor) -> Distribution: ...
-
-    @abstractmethod
-    def observation_model(self, z: Tensor) -> Distribution: ...
-
-    @abstractmethod
-    def forward(self, x: Tensor) -> tuple[Distribution, Distribution, Tensor]: ...
 
 
 class ModelVAE(BaseModel):
@@ -60,32 +41,38 @@ class ModelVAE(BaseModel):
             prior=prior,
             batch_size=batch_size,
         )
-        self.register_buffer("prior_params", torch.zeros(torch.Size([1, 2 * latent_features])))
+        if self.logger:
+            self.logger.log_hyperparams(
+                {
+                    "batch_size": batch_size,
+                    "latent_features": latent_features,
+                },
+            )
 
     def posterior(self, x: Tensor) -> Distribution:
-        """return the distribution `q(x|x) = N(z | mu(x), sigma(x))`"""
+        """q(z|x) = N(z | mu(x), sigma(x))"""
 
-        # compute the parameters of the posterior
         h_x = self.encoder(x)
         mu, log_sigma = h_x.chunk(2, dim=-1)
 
-        # return a distribution `q(x|x) = N(z | \mu(x), \sigma(x))`
+        # Constrain log_sigma to prevent numerical instability
+        # Clamp to reasonable range: exp(-10) ≈ 4.5e-5, exp(2) ≈ 7.4
+        log_sigma = torch.clamp(log_sigma, min=-10, max=2)
+
         return ReparameterizedDiagonalGaussian(mu, log_sigma)
 
-    # def prior(self, batch_size: int = 1) -> Distribution:
-    #     """return the distribution `p(z)`"""
-    #     prior_params = self.prior_params.expand(batch_size, *self.prior_params.shape[-1:]
-    #  # type: ignore
-    #     mu, log_sigma = prior_params.chunk(2, dim=-1)  # type: ignore
-
-    #     # return the distribution `p(z)`
-    #     return ReparameterizedDiagonalGaussian(mu, log_sigma)  # type: ignore
-
     def observation_model(self, z: Tensor) -> Distribution:
-        """return the distribution `p(x|z)`"""
+        """p(x|z) = N(x | mu(z), sigma(z))"""
+
         px_logits = self.decoder(z)
-        px_logits = px_logits.view(-1, *self.input_shape)  # reshape the output
-        return Bernoulli(logits=px_logits, validate_args=False)
+        mu, log_sigma = px_logits.chunk(2, dim=1)
+
+        # Apply sigmoid to mu to constrain to [0, 1] for MNIST pixel values
+        mu = torch.sigmoid(mu)
+        # Constrain log_sigma to reasonable range to prevent extreme values
+        log_sigma = torch.clamp(log_sigma, min=-10, max=0)
+
+        return ReparameterizedDiagonalGaussian(mu, log_sigma)
 
     def forward(self, x: Tensor) -> tuple[Distribution, Distribution, Tensor]:
         """
@@ -119,12 +106,23 @@ class VariationalAutoencoder(lightning.LightningModule):
         input_shape: tuple[int, int, int],
         beta: float,
         val_num_images: int = 5,
+        learning_rate: float = 1e-4,
     ) -> None:
+        # self.logger.log_hyperparams()
+
         super().__init__()
         self.model = model
         self.input_shape = input_shape
         self.beta = beta
         self.val_num_images = val_num_images
+        self.learning_rate = learning_rate
+        if self.logger:
+            self.logger.log_hyperparams(
+                {
+                    "beta": self.beta,
+                    "learning_rate": self.learning_rate,
+                },
+            )
 
         self.reset_save()
 
@@ -150,6 +148,11 @@ class VariationalAutoencoder(lightning.LightningModule):
         # loss
         loss = -beta_elbo.mean()
 
+        # Check for NaN/Inf and replace with a large but finite value
+        if torch.isnan(loss) or torch.isinf(loss):
+            logger.warning(f"{loss} detected.")
+            loss = torch.tensor(1e6, device=loss.device, dtype=loss.dtype, requires_grad=True)
+
         self.log("train_loss", loss, prog_bar=True)
         if batch_idx == 0:
             reconstructed_images = px.sample()
@@ -168,7 +171,7 @@ class VariationalAutoencoder(lightning.LightningModule):
         return loss
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
-        return torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        return torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
     def validation_step(self, batch: Tensor, batch_idx: int) -> None:
         x, _ = batch
@@ -230,33 +233,100 @@ class VariationalAutoencoder(lightning.LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         if len(self.val_latents) > 30:
-            latents_np = torch.cat(self.val_latents, dim=0).numpy()
-            labels_np = torch.cat(self.val_labels, dim=0).numpy()
+            latent_points = torch.cat(self.val_latents, dim=0)
+            labels = torch.cat(self.val_labels, dim=0)
 
             if type(self.model.prior) is MixtureOfGaussian:
-                latents_np = torch.cat(
-                    (
-                        *self.val_latents,
-                        self.model.prior.means.cpu(),
-                    ),
-                    dim=0,
-                ).numpy()
-                labels_np = torch.cat(
-                    (
-                        *self.val_labels,
-                        *[torch.tensor([10]) for _ in range(10)],
-                    ),
-                    dim=0,
-                ).numpy()
+                self._tsne(latent_points, labels)
 
-            tsne_results = tsne(latents_np)
+                # calculate metrics
+                self._determine_unsupervised_metrics(
+                    latent_points=latent_points,
+                )
 
-            fig = tsne_plot(tsne_results, labels_np)
+                self._determine_supervised_metrics(
+                    latent_points=latent_points,
+                    labels=labels,
+                )
 
-            tsne_result = fig_to_image(fig)
+    def _tsne(self, latent_points: Tensor, labels: Tensor):
+        def fit_tsne(_latents_np: NDArray[Any]):
+            return TSNE(n_components=2, random_state=42).fit_transform(_latents_np)  # pyright: ignore[reportUnknownArgumentType]
 
-            self.logger.experiment.add_images(  # type: ignore
-                "tsne",
-                tsne_result[None,],
-                self.global_step,
+        if type(self.model.prior) is MixtureOfGaussian:
+            prototypes = self.prototypes
+
+            latents_np = torch.vstack(
+                (
+                    latent_points,
+                    prototypes,
+                ),
             )
+
+        latents_np = latent_points.numpy()
+        labels_np = labels.numpy()
+
+        tsne_result = fit_tsne(latents_np)
+
+        tsne_means = None
+        if type(self.model.prior) is MixtureOfGaussian:
+            tsne_result, tsne_means = tsne_result[:1000], tsne_result[1000:]
+
+        fig = tsne_plot(tsne_result, labels_np, means=tsne_means)
+
+        tsne_result_image = fig_to_image(fig)
+
+        self.logger.experiment.add_images(  # type: ignore
+            "tsne",
+            tsne_result_image[None,],
+            self.global_step,
+        )
+
+    def _determine_unsupervised_metrics(
+        self,
+        latent_points: Tensor,
+    ) -> None:
+        assignments = self._determine_assignments(latent_points)
+
+        latent_points_np = latent_points.numpy()
+
+        calinski_harabasz_sc = calinski_harabasz_score(
+            X=latent_points_np,
+            labels=assignments,
+        )
+        db_sc = davies_bouldin_score(
+            X=latent_points_np,
+            labels=assignments,
+        )
+        silhouette_sc = float(
+            silhouette_score(
+                X=latent_points_np,
+                labels=assignments,
+            ),
+        )
+
+        self.logger.log_metrics(
+            {  # pyright: ignore[reportOptionalMemberAccess]
+                "calinski_harabasz_score": calinski_harabasz_sc,
+                "db_score": db_sc,
+                "silhouette_score": silhouette_sc,
+            },
+        )
+
+    def _determine_supervised_metrics(
+        self,
+        latent_points: Tensor,
+        labels: Tensor,
+    ): ...
+
+    def _determine_assignments(self, latent_points: Tensor) -> Tensor:
+        def _similarity_score(latent_points: Tensor, cluster_centers: Tensor):
+            return torch.cdist(latent_points, cluster_centers)
+
+        similarities = _similarity_score(latent_points, self.prototypes)
+
+        return torch.argmin(similarities, dim=1)
+
+    @property
+    def prototypes(self) -> Tensor:
+        return self.model.prior.means.cpu().detach()  # type: ignore
